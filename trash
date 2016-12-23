@@ -1,0 +1,225 @@
+#!/bin/sh
+#This script provide a method to move contents to ~/trashcan, instead of 'rm' them directly.
+#It helps you retrieve the contents which were deleted within < 7 > days.
+#Date: Nov.29.2016
+#Version: 1.0.0
+#Auther: Arvin(mikepetermessidona@hotmail.com) twitter(@Messi_Arvin)
+PATH_TRASHCAN=~/trashcan
+PATH_RECORD=$PATH_TRASHCAN/.record
+PATH_CRON=/var/spool/cron/crontabs
+function init(){
+	if [ ! -d $PATH_TRASHCAN ]
+		then
+		mkdir $PATH_TRASHCAN
+		chmod 600 $PATH_TRASHCAN
+	fi
+}
+function usage(){
+    echo "Function: Put files or directories in trashcan."
+    echo "Usage: trash [OPTION]... FILE..."
+    echo "Options:"
+    echo "    -h | -help        Show the help mesage"
+    echo "    -t | -trash       Move contents to trashcan"
+    echo "    -f | -force       Delete contents forcely"
+    echo "    -l | -list        List contents in trashcan"
+    echo "    -r | -restore     Restore the contents in trashcan"
+    echo "    -d | -delete      Delete contents from trashcan"
+    echo "    -e | -empty       Empty trashcan"    
+    echo "    -c | -config      Configure crontab task,empty trashcan regularly"
+    echo ""
+    echo "Report bugs to Arvin(mikepetermessidona@hotmail.com)"
+}
+function cron_delete(){
+	if [ ${#param[@]} -lt 1 ]
+	then 
+		regularTime=7
+	else
+		regularTime=${param[1]}
+	fi
+	arrayCron=($(find $PATH_TRASHCAN/* -mtime +$regularTime))
+    for file in ${arrayCron[@]}
+    do
+        $(rm -rf $file)
+	fileRecord="${file##*/}"
+        $(sed -i /$fileRecord/'d' $PATH_RECORD)
+    done
+}
+function delete(){
+	if [ ${#param[@]} -lt 1 ]
+		then
+		echo "Please input the files you want to restore!"
+		echo ">trash -d [file1]..."
+	else
+		for file in ${param[@]}
+		 do
+
+			fileDelete=$(awk /$file/'{print $1}' $PATH_RECORD)
+			$(rm -rf $fileDelete)
+			echo "$fileDelete is deleted"
+			$(sed -i /$fileDelete/'d' $PATH_RECORD)
+
+		done
+	fi
+}
+function empty(){
+	rm -rf $PATH_TRASHCAN/*
+	rm -rf $PATH_RECORD
+}
+function restore(){
+
+	if [ ${#param[@]} -lt 1 ]
+		then
+		echo "Please input the files you want to restore!"
+		echo ">trash -r [file1]..."
+	else
+	
+		for file in ${param[@]}
+		 do
+
+			restorePath=$(awk /$file/'{print $2}' $PATH_RECORD) 
+			fileRestore=$(awk /$file/'{print $1}' $PATH_RECORD)
+			$(mv  $PATH_TRASHCAN/$fileRestore $restorePath)
+			echo "$fileRestore is restored to $restorePath"
+			$(sed -i /$fileRestore/'d' $PATH_RECORD)
+
+		done
+	fi
+}
+function trash(){
+	if [ ${#param[@]} -lt 1 ]
+		then
+		echo "Please input the files you want to trash!"
+		echo ">trash -t [file1]..."
+	else
+		file_circle=1
+		TotalFileSize=0
+		for file in ${param[@]}
+		 do
+			if [ -f "$file" ] 
+				then
+					fileSize=`ls -l $file|awk ' {print $5}'` 
+					if [ $fileSize -gt $(( 200*1024*1024 )) ]
+						then
+						echo "$file size is larger than 500M, will be deleted directly"
+						`rm -rf $file`
+						unset param[$file_circle]
+						
+					else
+						TotalFileSize=$[TotalFileSize+fileSize]
+					fi
+			elif [ -d "$file" ] 
+				then
+					dirSize=`du -sb $file|awk '{print $1}'`
+					if [ $dirSize -gt $(( 200*1024*1024 )) ]
+						then
+						echo "dir: $file size is larger than 500M, will be deleted directly"
+						`rm -rf $file`
+						unset param[$file_circle]
+					else
+						TotalFileSize=$[TotalFileSize+dirSize]
+					fi
+			fi
+		file_circle=`expr $file_circle + 1`		
+		done		
+ 
+		for file in ${param[@]}
+		do
+			currentTime=`date +%Y-%m-%d_%H:%M:%S`
+			trashFile="${file##*/}_${currentTime}"
+			trashPath="$(pwd)/$file"
+			 
+			if mv -f $file $PATH_TRASHCAN/$trashFile
+			 then 
+				record $trashFile $trashPath
+				echo "$file is trashed"
+			fi
+		
+		done		
+	
+	fi
+}
+function record(){
+	if [ ! -f $PATH_RECORD ]
+	then 
+		touch $PATH_RECORD
+		chmod 644 $PATH_RECORD
+	fi
+		echo $1 $2>> $PATH_RECORD
+}
+function config(){
+	if [ ${#param[@]} -lt 1 ]
+	then 
+		regularTime=7
+	else
+		regularTime=${param[1]}
+	fi
+	crontab -l > $PATH_CRON/$USER
+	# echo "* * * * * echo "delete files which were older than $regularTime days">`tty` " >> $PATH_CRON/$USER
+	$(sed -i /trash/'d' $PATH_CRON/$USER)
+	echo "*/30 * * * * trash -o $regularTime " >> $PATH_CRON/$USER
+	crontab $PATH_CRON/$USER
+	crontab -l
+	
+}
+function list(){
+	cat $PATH_RECORD
+}
+function force(){
+	rm -rf ${param[@]}
+}
+#
+#Script starts...
+
+init
+
+if [ $# -ge 1 ]
+	then
+	
+	    declare param=()
+            param_circle=0
+	    for i in $@; do
+		param[param_circle]=$i
+		param_circle=$(($param_circle+1))
+	    done
+	    unset param[0]
+		
+	    case "$1" in
+	    -h)
+                usage
+                ;;
+	    -t)			
+		trash	
+                ;;
+	    -f)
+                force
+                ;;
+	    -l)
+                list
+                ;;
+            -r)
+                restore
+                ;;
+	    -d)
+                delete
+                ;;
+            -e)
+		empty
+                ;;            
+	    -c)
+                config 
+                ;;
+	    -o)
+                cron_delete 
+                ;;
+             *)
+                echo "$1 is not an option"
+                usage
+                ;;
+             esac
+
+else
+	usage
+    
+fi
+
+
