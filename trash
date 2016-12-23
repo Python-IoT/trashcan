@@ -100,7 +100,7 @@ function trash(){
 					fileSize=`ls -l $file|awk ' {print $5}'` 
 					if [ $fileSize -gt $(( 200*1024*1024 )) ]
 						then
-						echo "$file size is larger than 500M, will be deleted directly"
+						echo "$file size is larger than 200M, will be deleted directly"
 						`rm -rf $file`
 						unset param[$file_circle]
 						
@@ -112,7 +112,7 @@ function trash(){
 					dirSize=`du -sb $file|awk '{print $1}'`
 					if [ $dirSize -gt $(( 200*1024*1024 )) ]
 						then
-						echo "dir: $file size is larger than 500M, will be deleted directly"
+						echo "dir: $file size is larger than 200M, will be deleted directly"
 						`rm -rf $file`
 						unset param[$file_circle]
 					else
